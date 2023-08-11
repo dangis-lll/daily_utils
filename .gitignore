@@ -3,3 +3,4 @@
 *.raw
 logs/
 config
+chatgpt.py
