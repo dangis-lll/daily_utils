@@ -25,7 +25,7 @@ if __name__ == '__main__':
             if np.count_nonzero(mask.astype(int)) < 1000:
                 continue
             bbox = get_bbox_from_mask(mask)
-            expansion = [int(5/prop[0][2]),int(5/prop[0][1]),int(5/prop[0][0])]
+            expansion = [int(3/prop[0][2]),int(3/prop[0][1]),int(3/prop[0][0])]
 
             bbox = [
                 [max(0, bbox[0][0] - expansion[0]), min(ct_array.shape[0], bbox[0][1] + expansion[0])],

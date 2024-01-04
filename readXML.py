@@ -75,6 +75,6 @@ def translate_ts(filepath,outpath):
 
 
 if __name__ == '__main__':
-    translate_ts('spdImplant_en.ts','spdImplant_en1.ts')
-    TS_2_CSV('spdImplant_en1.ts','spdImplant_en1.csv')
+    translate_ts('translate/dentalnavi_en.ts','translate/dentalnavi_en1.ts')
+    # TS_2_CSV('spdImplant_en1.ts','spdImplant_en1.csv')
 

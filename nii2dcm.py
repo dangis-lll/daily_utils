@@ -1,7 +1,7 @@
 import time, os
 from img2dcm import convert as img_convert
-from test11 import convert as msk_convert
-from test11 import convert_list as msk_list_convert
+from msk2dcm import convert as msk_convert
+from msk2dcm import convert_list as msk_list_convert
 
 
 def nifti2dcm(input_nifti_dir, output_dicom_dir, struct_name, roi_list):
@@ -39,32 +39,31 @@ def nifti_multiple_label_convert(input_nifti_dir, output_dir, struct_name):
 
 
 if __name__ == '__main__':
-    #
-    #
-    labelpath = r'C:\DL_DataBase\CBCT_data\kk/30730_cut.nii.gz'
-    patienName = '30730_cut'
 
-    outputdir = labelpath[:-7]
-    if not os.path.exists(outputdir):
-        os.mkdir(outputdir)
-    patienID = time.strftime("%Y%m%d%H%M%S") + '_' + patienName
-
-    img_convert(patienID, patienName, labelpath, outputdir)
-
-    # filepath = r'C:\Users\dangis\Desktop\dd'
-    # datalist = os.listdir(filepath)
-    # if len(datalist):
-    #     for data in datalist:
-    #         filename = data
-    #         labelpath = os.path.join(filepath, filename)
-    #         patienName = data[:-7]
+    # labelpath = r'C:\DL_DataBase\CBCT_data\kk/30730_cut.nii.gz'
+    # patienName = '30730_cut'
     #
-    #         outputdir = filepath + '/' + patienName
-    #         if not os.path.exists(outputdir):
-    #             os.mkdir(outputdir)
-    #         patienID = time.strftime("%Y%m%d%H%M%S") + '_' + patienName
+    # outputdir = labelpath[:-7]
+    # if not os.path.exists(outputdir):
+    #     os.mkdir(outputdir)
+    # patienID = time.strftime("%Y%m%d%H%M%S") + '_' + patienName
     #
-    #         img_convert(patienID, patienName, labelpath, outputdir)
+    # img_convert(patienID, patienName, labelpath, outputdir)
+
+    filepath = r'C:\DL_DataBase\ddd\re\1.0'
+    datalist = os.listdir(filepath)
+    if len(datalist):
+        for data in datalist:
+            filename = data
+            labelpath = os.path.join(filepath, filename)
+            patienName = data[:-7]
+
+            outputdir = filepath + '/' + patienName
+            if not os.path.exists(outputdir):
+                os.mkdir(outputdir)
+            patienID = time.strftime("%Y%m%d%H%M%S") + '_' + patienName
+
+            img_convert(patienID, patienName, labelpath, outputdir)
 
     # branddir = 'statisc/raw'
     # outputdir = r'C:\DL_DataBase\dcmlabel'

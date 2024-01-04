@@ -2,6 +2,7 @@ import json
 import pickle
 from collections import OrderedDict
 
+import monai.transforms
 import numpy as np
 import torch
 from batchgenerators.augmentations.utils import resize_segmentation
@@ -13,6 +14,7 @@ from skimage.transform import resize
 import SimpleITK as sitk
 import os
 import vtk
+from torch.nn.functional import grid_sample
 from vtkmodules.util.numpy_support import vtk_to_numpy
 from skimage import measure as meas
 
@@ -68,7 +70,7 @@ def data_preprocess(ct_array, prop=None, target_spacing=None):
         ct_array = resample_data(ct_array, new_shape)
     ct_array = ct_array - peak_x
     ct_array[ct_array < 0] = 0
-    ct_array = np.clip(ct_array, ct_array.min(), np.percentile(ct_array, 99.5)).astype('float32')
+    # ct_array = np.clip(ct_array, ct_array.min(), np.percentile(ct_array, 99.5)).astype('float32')
     return ct_array
 
 
@@ -106,6 +108,22 @@ def resample_data_or_seg_slow(data, new_shape, is_seg, order=3):
         reshaped_final_data = resize_fn(data, new_shape, order, **kwargs)
         # seg:order=1
         # ct:order=3
+        return reshaped_final_data.astype(dtype_data)
+    else:
+        print("no resampling necessary")
+        return data.astype(dtype_data)
+
+
+def resample_label(data, new_shape):
+    assert len(data.shape) == 3, "data must be (z, x, y)"
+    resize_fn = resize
+    kwargs = {'mode': 'edge', 'anti_aliasing': False}
+    dtype_data = data.dtype
+    data = data.astype(float)
+    shape = np.array(data.shape)
+    new_shape = np.array(new_shape)
+    if np.any(shape != new_shape):
+        reshaped_final_data = resize_fn(data, new_shape, 1, **kwargs)
         return reshaped_final_data.astype(dtype_data)
     else:
         print("no resampling necessary")
@@ -385,3 +403,116 @@ def bbox_expansion(bbox, pad_size, data_shape, spacing):
     ]
 
     return bbox
+
+
+def has_aniso_spacing(ori_spacing, ori_shape, anisotropy_threshold=3):
+    target = ori_spacing
+    target_size = ori_shape
+    worst_spacing_axis = np.argmax(target)
+    other_axes = [i for i in range(len(target)) if i != worst_spacing_axis]
+    other_spacings = [target[i] for i in other_axes]
+    other_sizes = [target_size[i] for i in other_axes]
+
+    has_aniso_spacing = target[worst_spacing_axis] > (anisotropy_threshold * max(other_spacings))
+    has_aniso_voxels = target_size[worst_spacing_axis] * anisotropy_threshold < min(other_sizes)
+
+    if has_aniso_voxels and has_aniso_spacing:
+        return True
+    else:
+        return False
+
+
+def fix_anisotropy(ori_spacing, ori_shape, anisotropy_threshold=3):
+    target = ori_spacing
+    worst_spacing_axis = np.argmax(target)
+    other_axes = [i for i in range(len(target)) if i != worst_spacing_axis]
+    other_spacings = [target[i] for i in other_axes]
+
+    spacings_of_that_axis = worst_spacing_axis
+    target_spacing_of_that_axis = np.percentile(spacings_of_that_axis, 10)
+    # don't let the spacing of that axis get higher than the other axes
+    if target_spacing_of_that_axis < max(other_spacings):
+        target_spacing_of_that_axis = max(max(other_spacings), target_spacing_of_that_axis) + 1e-5
+    target[worst_spacing_axis] = target_spacing_of_that_axis
+
+    new_shape = np.round(
+        ((np.array(ori_spacing) / np.array(target)).astype(float) * np.array(ori_shape))).astype(int)
+    resampled_spacing = target
+
+    return new_shape, resampled_spacing
+
+
+def resample_data2(data, new_shape):
+    assert len(data.shape) == 3, "data must be (z, y, x)"
+    dtype_data = data.dtype
+    data = data.astype('float32')
+    data = np.transpose(data, (2, 1, 0))
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    data = data[None][None]
+    data = torch.tensor(data).to(device)
+
+    out_d = new_shape[0]
+    out_h = new_shape[1]
+    out_w = new_shape[2]
+
+    # 生成三维坐标网格
+    new_d = torch.linspace(-1, 1, out_d).view(-1, 1, 1).repeat(1, out_h, out_w)
+    new_h = torch.linspace(-1, 1, out_h).view(1, -1, 1).repeat(out_d, 1, out_w)
+    new_w = torch.linspace(-1, 1, out_w).view(1, 1, -1).repeat(out_d, out_h, 1)
+
+    # 将三个维度的坐标拼接成一个三维坐标网格
+    grid = torch.cat((new_d.unsqueeze(3), new_h.unsqueeze(3), new_w.unsqueeze(3)), dim=3)
+    grid = grid.unsqueeze(0).to(device)
+
+    outp = grid_sample(data, grid=grid, mode='nearest', align_corners=True).cpu().numpy()[0][0]
+    print('new shape: ', outp.shape)
+    return outp.astype(dtype_data)
+
+
+def resample_data_monai(data, scale_ratio):
+    assert len(data.shape) == 3, "data must be (z, y, x)"
+    dtype_data = data.dtype
+    data = data.astype('float32')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    data = data[None]
+    data = torch.tensor(data).to(device)
+
+    transform = monai.transforms.Compose([
+        monai.transforms.Orientation(axcodes="RAS"),
+        monai.transforms.Spacing(pixdim=scale_ratio, align_corners=True, mode="bilinear")
+    ])
+    outp = transform(data).cpu().numpy()[0]
+    print('new shape: ', outp.shape)
+    return outp.astype(dtype_data)
+
+
+def seperate_LR(res):
+    # Label结果后处理
+    label_data = np.zeros(res.shape, res.dtype)
+    # 处理神经管 Label = 1,保留两个最大的连通域分别设置为1和2
+    label_data_1 = np.zeros(res.shape, res.dtype)
+    label_data_1[res == 1] = 1
+    keep_connected_regions(label_data_1, label_data, [1, 2])
+
+    # 通过label 1和2的x轴位置区分左右神经管
+    index_1 = np.where(label_data == 1)
+    index_2 = np.where(label_data == 2)
+    if len(index_1[2]) > 0 and len(index_2[2]) > 0:
+        x_center_label_1 = index_1[2][int(len(index_1[2]) / 2)]
+        x_center_label_2 = index_2[2][int(len(index_2[2]) / 2)]
+        if x_center_label_1 < x_center_label_2:
+            label_data[label_data == 1] = 255
+            label_data[label_data == 2] = 1
+            label_data[label_data == 255] = 2
+
+    return label_data
+
+
+def delete_files(folder_path, file_name):
+    # 遍历文件夹内的所有文件和子文件夹
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if file == file_name:
+                file_path = os.path.join(root, file)
+                os.remove(file_path)
+                print(f"删除文件: {file_path}")

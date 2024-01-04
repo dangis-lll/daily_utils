@@ -3,8 +3,8 @@ import time
 from utils import *
 
 if __name__ == '__main__':
-    imgpath = r'C:\DL_DataBase\CBCT_data\CTooth\NC release data\img'
-    labelpath = r'C:\DL_DataBase\CBCT_data\CTooth\NC release data\label'
+    imgpath = r'C:\DL_DataBase\CBCT_data\raw_data\img'
+    labelpath = r'C:\DL_DataBase\CBCT_data\raw_data\alltooth'
     savepath = r'C:\DL_DataBase\CBCT_data\new_data\train\tooth'
     if not os.path.exists(savepath):
         os.mkdir(savepath)
