@@ -50,7 +50,7 @@ if __name__ == '__main__':
     #
     # img_convert(patienID, patienName, labelpath, outputdir)
 
-    filepath = r'C:\DL_DataBase\ddd\re\1.0'
+    filepath = r'C:\DL_DataBase\CBCT_data\sinus\label'
     datalist = os.listdir(filepath)
     if len(datalist):
         for data in datalist:

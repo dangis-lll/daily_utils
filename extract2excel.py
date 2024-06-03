@@ -1,6 +1,7 @@
 import csv
+import re
 
-input_file = r'files/SCAResult.txt'
+input_file = r'files/sca2.txt'
 output_file = "files/output.csv"
 
 # 打开输入文件和输出CSV文件
@@ -9,19 +10,21 @@ with open(input_file, "r", encoding="utf-8") as infile, open(output_file, "w", n
     csv_writer = csv.writer(csvfile)
 
     # 写入表头
-    csv_writer.writerow(["代码位置", "警告类型", "详细"])
+    csv_writer.writerow(["代码位置", "行号","警告类型", "详细"])
 
     lines = []
     for line in infile:
         # 提取信息
         if line.startswith(
-                "C:\\C++_program\\xindaima\\release-build") and 'out\\build' not in line and "thirdparty" not in line:
-            line = line.replace("C:\\C++_program\\xindaima\\release-build\\", "")
+                "C:\\C++_program\\release-build") and 'out\\build' not in line and "thirdparty" not in line:
+            line = line.replace("C:\\C++_program\\release-build\\", "")
             parts = line.split(": ")
             code_location = parts[0]
+            column = re.search(r'\((\d+)\)', code_location).group(1)
+            code_location = code_location.split("(")[0]
             warning_type = parts[1]
             detail = "".join(parts[2:]).strip()  # 移除前后的空白字符
-            lines.append([code_location, warning_type, detail])
+            lines.append([code_location, column,warning_type, detail])
 
     # 根据首字母对行进行排序
     sorted_lines = sorted(lines, key=lambda x: x[0])

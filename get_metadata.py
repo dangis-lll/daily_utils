@@ -9,7 +9,7 @@ from scipy.signal import find_peaks, argrelextrema
 
 from utils import *
 
-bpath = r'C:\DL_DataBase\CBCT_data\baiduCT'
+bpath = r'C:\DL_DataBase\CBCT_data\femur\img'
 brandname = os.listdir(bpath)
 META = {}
 for j in brandname:
@@ -38,4 +38,4 @@ df.reset_index(inplace=True)
 df.rename(columns = {'index':'filename'}, inplace = True)
 
 # 保存为CSV文件，包括index
-df.to_csv(r'C:\DL_DataBase\CBCT_data\baiduCT/output.csv', index=False)
+df.to_csv(r'C:\DL_DataBase\CBCT_data\femur/output.csv', index=False)

@@ -1,30 +1,35 @@
+import os
+
 from utils import *
 
+data_path = r'C:\baidunetdiskdownload\ddd\img'
+bone_path = r'C:\baidunetdiskdownload\ddd\bone'
+label_path = r'C:\baidunetdiskdownload\ddd\label'
+out_path = r'C:\baidunetdiskdownload\ddd\train'
 
-def resample_data3(data,target_shape):
-    ori_shape = data.shape
-    dtype_data = data.dtype
-    data = data.astype('float32')
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    data = data[None]
-    data = torch.tensor(data).to(device)
+for file in os.listdir(data_path):
+    ct, prop = read_nii_2_np(os.path.join(data_path, file))
+    bone, _ = read_nii_2_np(os.path.join(bone_path, file))
+    label, _ = read_nii_2_np(os.path.join(label_path, file))
 
-    scale_ratio =[float(target_shape[0]/ori_shape[0]),float(target_shape[1]/ori_shape[1]),float(target_shape[2]/ori_shape[2])]
-    theta = torch.tensor([[scale_ratio[0], 0, 0, 0],
-                          [0, scale_ratio[1], 0, 0],
-                          [0, 0, scale_ratio[2], 0]])
+    ct[np.isnan(ct)] = 0
+    ct = ct.astype('float32')
+    ct = ct - ct.min()
+    # peak_id = get_peak_idx(ct)
+    # ct[ct < peak_id] = 0
+    ori_data_shape = ct.shape
 
-    grid = torch.nn.functional.affine_grid(theta,ori_shape,True)
-    res = torch.nn.functional.grid_sample(data,grid,"bilinear",align_corners=True)
-    outp = res.cpu().numpy()[0]
-    print('new shape: ', outp.shape)
-    return outp.astype(dtype_data)
+    spacing = prop[0]
+    mask = bone == 2
+    roi_bbox = get_bbox_from_mask(mask)
+    delta_mm = 3
+    delta_dims = [int(delta_mm / spacing[2]), int(delta_mm / spacing[1]), int(delta_mm / spacing[0])]  # z,y,x
+    for i in range(3):
+        roi_bbox[i][0] = max(0, roi_bbox[i][0] - delta_dims[i])
+        roi_bbox[i][1] = min(roi_bbox[i][1] + delta_dims[i], ori_data_shape[i])
 
+    ct = crop_to_bbox(ct,roi_bbox)
+    label = crop_to_bbox(label,roi_bbox)
 
-label,prop = read_nii_2_np(r'C:\DL_DataBase\bone\output\label/2020f-01-pre-1.nii.gz')
-label2,_ = read_nii_2_np(r'C:\DL_DataBase\bone\label/2020f-01-pre-1.nii.gz')
-
-shape = label2.shape
-
-res = resample_data3(label,shape)
-save_nii(res,prop,r'C:\DL_DataBase\bone/a.nii.gz')
+    save_nii(ct,prop,os.path.join(out_path,'img',file))
+    save_nii(label,prop,os.path.join(out_path,'label',file))

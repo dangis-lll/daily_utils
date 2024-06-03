@@ -1,3 +1,4 @@
+import copy
 import json
 import pickle
 from collections import OrderedDict
@@ -17,6 +18,8 @@ import vtk
 from torch.nn.functional import grid_sample
 from vtkmodules.util.numpy_support import vtk_to_numpy
 from skimage import measure as meas
+from vtkmodules.util import numpy_support
+import open3d as o3d
 
 
 def create_nonzero_mask(data):
@@ -66,7 +69,7 @@ def data_preprocess(ct_array, prop=None, target_spacing=None):
     if target_spacing and prop:
         new_shape = np.round(
             ((np.array(prop[0]) / np.array(target_spacing)).astype(float) * np.array(
-                ct_array.shaoe))).astype(int)
+                ct_array.shape))).astype(int)
         ct_array = resample_data(ct_array, new_shape)
     ct_array = ct_array - peak_x
     ct_array[ct_array < 0] = 0
@@ -516,3 +519,221 @@ def delete_files(folder_path, file_name):
                 file_path = os.path.join(root, file)
                 os.remove(file_path)
                 print(f"删除文件: {file_path}")
+
+
+def get_inferdata_from_mesh(mesh, decimate_target):
+    if mesh.GetNumberOfCells() > decimate_target:
+        ratio = decimate_target / mesh.GetNumberOfCells()
+        decimate = vtk.vtkQuadricDecimation()
+        decimate.SetInputData(mesh)
+        decimate.SetTargetReduction(1 - ratio)
+        decimate.Update()
+        mesh = decimate.GetOutput()
+
+    num_cells = mesh.GetNumberOfCells()
+    cells = np.zeros([num_cells, 9], dtype='float32')
+    for i in range(len(cells)):
+        cells[i][0], cells[i][1], cells[i][2] = mesh.GetPoint(
+            mesh.GetCell(i).GetPointId(0))  # don't need to copy
+        cells[i][3], cells[i][4], cells[i][5] = mesh.GetPoint(
+            mesh.GetCell(i).GetPointId(1))  # don't need to copy
+        cells[i][6], cells[i][7], cells[i][8] = mesh.GetPoint(
+            mesh.GetCell(i).GetPointId(2))  # don't need to copy
+
+    cmf = vtk.vtkCenterOfMass()
+    cmf.SetInputData(mesh)
+    cmf.Update()
+    c = cmf.GetCenter()
+    mean_cell_centers = np.array(c)
+
+    pdn = vtk.vtkPolyDataNormals()
+    pdn.SetInputData(mesh)
+    pdn.SetComputeCellNormals(1)
+    pdn.SetSplitting(0)
+    pdn.Update()
+    normals = np.zeros([num_cells, 3], dtype='float32')
+    for i in range(num_cells):
+        normals[i][0] = pdn.GetOutput().GetCellData().GetNormals().GetTuple(i)[0]
+        normals[i][1] = pdn.GetOutput().GetCellData().GetNormals().GetTuple(i)[1]
+        normals[i][2] = pdn.GetOutput().GetCellData().GetNormals().GetTuple(i)[2]
+
+    vcen = vtk.vtkCellCenters()
+    vcen.SetInputData(mesh)
+    vcen.Update()
+    barycenters = vtk_to_numpy(vcen.GetOutput().GetPoints().GetData())
+    postpro_prop = np.column_stack((cells, barycenters, normals))
+
+    barycenters -= mean_cell_centers[0:3]
+
+    cells[:, 0:3] -= mean_cell_centers[0:3]
+    cells[:, 3:6] -= mean_cell_centers[0:3]
+    cells[:, 6:9] -= mean_cell_centers[0:3]
+    v1 = np.zeros([num_cells, 3], dtype='float32')
+    v2 = np.zeros([num_cells, 3], dtype='float32')
+    v3 = np.zeros([num_cells, 3], dtype='float32')
+
+    v1[:, 0] = cells[:, 0] - cells[:, 3]
+    v1[:, 1] = cells[:, 1] - cells[:, 4]
+    v1[:, 2] = cells[:, 2] - cells[:, 5]
+
+    v2[:, 0] = cells[:, 3] - cells[:, 6]
+    v2[:, 1] = cells[:, 4] - cells[:, 7]
+    v2[:, 2] = cells[:, 5] - cells[:, 8]
+
+    v3[:, 0] = cells[:, 6] - cells[:, 0]
+    v3[:, 1] = cells[:, 7] - cells[:, 1]
+    v3[:, 2] = cells[:, 8] - cells[:, 2]
+
+    mesh_normals1 = np.cross(v3, v1)  # calculating the normal for point P1
+    mesh_normal_length1 = np.linalg.norm(mesh_normals1, axis=1)
+    mesh_normals1[:, 0] /= mesh_normal_length1[:]
+    mesh_normals1[:, 1] /= mesh_normal_length1[:]
+    mesh_normals1[:, 2] /= mesh_normal_length1[:]
+
+    mesh_normals2 = np.cross(v1, v2)  # calculating the normal for point P2
+    mesh_normal_length2 = np.linalg.norm(mesh_normals2, axis=1)
+    mesh_normals2[:, 0] /= mesh_normal_length2[:]
+    mesh_normals2[:, 1] /= mesh_normal_length2[:]
+    mesh_normals2[:, 2] /= mesh_normal_length2[:]
+
+    mesh_normals3 = np.cross(v2, v3)  # calculating the normal for point P3
+    mesh_normal_length3 = np.linalg.norm(mesh_normals3, axis=1)
+    mesh_normals3[:, 0] /= mesh_normal_length3[:]
+    mesh_normals3[:, 1] /= mesh_normal_length3[:]
+    mesh_normals3[:, 2] /= mesh_normal_length3[:]
+
+    points = vtk_to_numpy(mesh.GetPoints().GetData()).copy()
+
+    maxs = points.max(axis=0)
+    mins = points.min(axis=0)
+    nmeans = normals.mean(axis=0)
+    nstds = normals.std(axis=0)
+
+    means = points.mean(axis=0)
+    stds = points.std(axis=0)
+
+    nmeans1 = mesh_normals1.mean(axis=0)
+    nstds1 = mesh_normals1.std(axis=0)
+    nmeans2 = mesh_normals2.mean(axis=0)
+    nstds2 = mesh_normals2.std(axis=0)
+    nmeans3 = mesh_normals3.mean(axis=0)
+    nstds3 = mesh_normals3.std(axis=0)
+
+    # curvatures_array = (curvatures_array-curvatures_array.min())/(curvatures_array.max()-curvatures_array.min())
+
+    for i in range(3):
+        cells[:, i] = (cells[:, i] - means[i]) / stds[i]  # point 1
+        cells[:, i + 3] = (cells[:, i + 3] - means[i]) / stds[i]  # point 2
+        cells[:, i + 6] = (cells[:, i + 6] - means[i]) / stds[i]  # point 3
+        normals[:, i] = (normals[:, i] - nmeans[i]) / nstds[i]
+        barycenters[:, i] = (barycenters[:, i] - mins[i]) / (maxs[i] - mins[i])
+        mesh_normals1[:, i] = (mesh_normals1[:, i] - nmeans1[i]) / nstds1[i]
+        mesh_normals2[:, i] = (mesh_normals2[:, i] - nmeans2[i]) / nstds2[i]
+        mesh_normals3[:, i] = (mesh_normals3[:, i] - nmeans3[i]) / nstds3[i]
+
+    # X = np.column_stack((barycenters,normals,cells,mesh_normals1,mesh_normals2,mesh_normals3))
+    X = np.column_stack((barycenters, normals))
+
+    return X, mesh, postpro_prop
+
+
+def draw_registration_result(source, target, transformation):
+    source_temp = copy.deepcopy(source)
+    target_temp = copy.deepcopy(target)
+    source_temp.paint_uniform_color([1, 0.706, 0])
+    target_temp.paint_uniform_color([0, 0.651, 0.929])
+    source_temp.transform(transformation)
+    o3d.visualization.draw_geometries([source_temp, target_temp])
+
+
+def preprocess_point_cloud(pcd, voxel_size):
+    pcd_down = pcd.voxel_down_sample(voxel_size)
+
+    radius_normal = voxel_size * 2
+    pcd_down.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+
+    radius_feature = voxel_size * 5
+    pcd_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        pcd_down, o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
+    return pcd_down, pcd_fpfh
+
+
+def prepare_point_cloud(source_polydata, target_polydata, voxel_size):
+    print("Load two point clouds and disturb initial pose.")
+
+    points = numpy_support.vtk_to_numpy(source_polydata.GetPoints().GetData())
+    source_pcd = o3d.geometry.PointCloud()
+    source_pcd.points = o3d.utility.Vector3dVector(points)
+
+    points_tooth_part = numpy_support.vtk_to_numpy(target_polydata.GetPoints().GetData())
+    target_pcd = o3d.geometry.PointCloud()
+    target_pcd.points = o3d.utility.Vector3dVector(points_tooth_part)
+
+    source_down, source_fpfh = preprocess_point_cloud(source_pcd, voxel_size)
+    target_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
+    return source_pcd, target_pcd, source_down, target_down, source_fpfh, target_fpfh
+
+
+def execute_global_registration(source_down, target_down, source_fpfh,
+                                target_fpfh, voxel_size):
+    distance_threshold = voxel_size * 1.5
+    result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh, True,
+        distance_threshold,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        3, [
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(
+                0.9),
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(
+                distance_threshold)
+        ], o3d.pipelines.registration.RANSACConvergenceCriteria(3000000, 0.9999))
+    return result
+
+
+def registration_polydata(source_polydata, target_polydata):
+    voxel_size = 1.0
+    source, target, source_down, target_down, source_fpfh, target_fpfh = prepare_point_cloud(
+        source_polydata, target_polydata, voxel_size)
+    result_ransac = execute_global_registration(
+        source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+    # return source, target, source_down, target_down, result_ransac.transformation
+    reg_p2p = o3d.pipelines.registration.registration_icp(
+        source_down, target_down, 0.01, result_ransac.transformation,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint())
+
+    return source, target, source_down, target_down, reg_p2p.transformation
+
+
+def icp_transform(source, target, trans_matrix):
+    curMatrix = vtk.vtkMatrix4x4()
+    for i in range(4):
+        for j in range(4):
+            curMatrix.SetElement(i, j, trans_matrix[i][j])
+
+    curTransform = vtk.vtkTransform()
+    curTransform.SetMatrix(curMatrix)
+
+    scanTransformFilter = vtk.vtkTransformPolyDataFilter()
+    scanTransformFilter.SetInputData(source)
+    scanTransformFilter.SetTransform(curTransform)
+    scanTransformFilter.Update()
+
+    icp = vtk.vtkIterativeClosestPointTransform()
+    icp.SetSource(scanTransformFilter.GetOutput())
+    icp.SetTarget(target)
+    icp.GetLandmarkTransform().SetModeToRigidBody()
+    # icp.DebugOn()
+    icp.SetMaximumNumberOfIterations(200)
+    # icp.StartByMatchingCentroidsOn()
+    icp.Modified()
+    icp.Update()
+
+    newMatrix = vtk.vtkMatrix4x4()
+    vtk.vtkMatrix4x4.Multiply4x4(icp.GetMatrix(), curMatrix, newMatrix)
+
+    new_trans_matrix = np.copy(trans_matrix)
+    for i in range(4):
+        for j in range(4):
+            new_trans_matrix[i][j] = newMatrix.GetElement(i, j)
+    return new_trans_matrix
