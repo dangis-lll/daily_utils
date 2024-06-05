@@ -51,16 +51,6 @@ def crop_to_bbox(image, bbox):
     return image_
 
 
-def get_peak_idx(ct_array):
-    data_flat = ct_array.flatten()
-    hist, _ = np.histogram(data_flat, bins=np.arange(np.min(data_flat), np.max(data_flat) + 1))
-    hist_m = medfilt(hist, 5)
-    hist_r = hist_m[::-1]
-    peaks_indices, _ = find_peaks(hist_r, width=10, height=0.001 * np.sum(hist_m))
-    peak_x = len(hist_r) - peaks_indices[0]
-    return peak_x
-
-
 def data_preprocess(ct_array, prop=None, target_spacing=None):
     ct_array[np.isnan(ct_array)] = 0
     ct_array = ct_array.astype('float32')
@@ -316,6 +306,17 @@ def get_peak_mid(hist):
     # 找到波峰索引
     peaks_indices, _ = find_peaks(hist_r, width=10, height=0.001 * np.sum(hist))
     # 获取波峰对应的横坐标
+    peak_x = len(hist_r) - peaks_indices[0]
+    return peak_x
+
+
+# 更优 ↓
+def get_peak_idx(ct_array):
+    data_flat = ct_array.flatten()
+    hist, _ = np.histogram(data_flat, bins=np.arange(np.min(data_flat), np.max(data_flat) + 1))
+    hist_m = medfilt(hist, 5)
+    hist_r = hist_m[::-1]
+    peaks_indices, _ = find_peaks(hist_r, width=10, height=0.001 * np.sum(hist_m))
     peak_x = len(hist_r) - peaks_indices[0]
     return peak_x
 

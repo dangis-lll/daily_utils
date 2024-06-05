@@ -3,8 +3,8 @@ import SimpleITK as sitk
 
 if __name__ == '__main__':
 
-    dicom_path = r'C:\DL_DataBase\CBCT_data\raw_data\new\Dicom'
-    outputpath = r'CBCT_data/raw_data/img'
+    dicom_path = r'C:\DL_DataBase\CBCT_data\skull\new_ct'
+    outputpath = r'C:\DL_DataBase\CBCT_data\skull\new_nii'
 
     datalist = os.listdir(dicom_path)
     for i in datalist:
@@ -18,7 +18,8 @@ if __name__ == '__main__':
             series_reader = sitk.ImageSeriesReader()
             series_reader.SetFileNames(series_file_names)
             image3D = series_reader.Execute()
-            sitk.WriteImage(image3D, os.path.join(dicom_path, '{}.nii.gz'.format(i)))
+            outpath = os.path.join(outputpath, '{}.nii.gz'.format(i))
+            sitk.WriteImage(image3D, outpath)
         except:
             print(i)
 
