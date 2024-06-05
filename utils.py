@@ -632,8 +632,8 @@ def get_inferdata_from_mesh(mesh, decimate_target):
         mesh_normals2[:, i] = (mesh_normals2[:, i] - nmeans2[i]) / nstds2[i]
         mesh_normals3[:, i] = (mesh_normals3[:, i] - nmeans3[i]) / nstds3[i]
 
-    # X = np.column_stack((barycenters,normals,cells,mesh_normals1,mesh_normals2,mesh_normals3))
-    X = np.column_stack((barycenters, normals))
+    X = np.column_stack((barycenters,normals,cells,mesh_normals1,mesh_normals2,mesh_normals3))
+    # X = np.column_stack((barycenters, normals))
 
     return X, mesh, postpro_prop
 

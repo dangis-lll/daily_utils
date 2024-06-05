@@ -242,13 +242,22 @@ def upsampling_labels(input_mesh, refined_mesh_d, refine_labels_d):
     fine_labels = fine_labels.reshape(-1, 1).astype(np.uint8)
     return fine_labels
 
+
 ori_data_path = r''
 dec_data_path = r''
 out_data_path = r''
 for i in os.listdir(ori_data_path):
     mesh, label = read_vtp_or_stl_file(os.path.join(ori_data_path, i))
-    mesh_d, _ = read_vtp_or_stl_file(os.path.join(dec_data_path, i))
     label = label.astype('int64')
+    mesh_d = mesh
+    if mesh.GetNumberOfCells() > 16000:
+        ratio = 16000 / mesh.GetNumberOfCells()
+        decimate = vtk.vtkQuadricDecimation()
+        decimate.SetInputData(mesh)
+        decimate.SetTargetReduction(1 - ratio)
+        decimate.Update()
+        mesh_d = decimate.GetOutput()
+
     label = upsampling_labels(mesh_d, mesh, label)
 
     save_meshseg(mesh_d, label, os.path.join(out_data_path, i))
