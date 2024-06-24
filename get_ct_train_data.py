@@ -1,15 +1,20 @@
+import os.path
+
 from utils import *
 
-datapath = r'C:\DL_DataBase\zygoma\img'
-roipath = r'C:\DL_DataBase\zygoma\bone'
-labelpath = r'C:\DL_DataBase\zygoma\label'
-outpath = r'C:\DL_DataBase\zygoma\train'
+datapath = r'C:\DL_DataBase\CBCT_data\skull\ddd'
+roipath = r'C:\DL_DataBase\CBCT_data\skull\new_bone'
+labelpath = r'C:\DL_DataBase\CBCT_data\skull\new_zygoma'
+outpath = r'C:\DL_DataBase\CBCT_data\skull'
 
-use_roi = 1
+use_roi = False
 target_spacing = [0.25, 0.25, 0.25]
 pad_size = 3
 
 for i in os.listdir(datapath):
+    if os.path.exists(os.path.join(outpath, 'img', i)):
+        continue
+    print(i)
     ct_array, prop = read_nii_2_np(os.path.join(datapath, i))
     label, _ = read_nii_2_np(os.path.join(labelpath, i))
 
@@ -20,6 +25,7 @@ for i in os.listdir(datapath):
 
     if use_roi:
         roi, _ = read_nii_2_np(os.path.join(roipath, i))
+        roi[roi != 1] = 0
         bbox = get_bbox_from_mask(roi)
         expansion = [int(pad_size / prop[0][2]), int(pad_size / prop[0][1]), int(pad_size / prop[0][0])]
         bbox = [
@@ -46,7 +52,3 @@ for i in os.listdir(datapath):
 
     save_nii(ct_array, prop, os.path.join(outpath, 'img', i))
     save_nii(label, prop, os.path.join(outpath, 'label', i))
-
-
-
-
