@@ -8,6 +8,7 @@ from pydicom.uid import generate_uid
 
 def convert(patienID: str,patienName: str, input_nifti_path: str,  output_dicom_path: str):
     img = sitk.ReadImage(input_nifti_path)
+    img = sitk.Cast(img, sitk.sitkInt32)
     # vol = sitk.GetArrayFromImage(img)
     modification_time = time.strftime("%H%M%S")
     modification_date = time.strftime("%Y%m%d")

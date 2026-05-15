@@ -40,8 +40,8 @@ def nifti_multiple_label_convert(input_nifti_dir, output_dir, struct_name):
 
 if __name__ == '__main__':
 
-    labelpath = r'C:\Users\dangis\Desktop\dd/ct.nii.gz'
-    patienName = 'ct'
+    labelpath = r'C:\baidunetdiskdownload\surround\img/KXXX.nii.gz'
+    patienName = 'KXXX'
 
     outputdir = labelpath[:-7]
     if not os.path.exists(outputdir):
